@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SP95 autour de moi</title>
+<meta name="description" content="Stations proposant du SP95 et leur prix en temps réel dans un rayon réglable autour de votre position. Données : Prix des carburants en France – Flux instantané – v2 (data.gouv.fr).">
+<meta name="theme-color" content="#1d4ed8">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root {
+    --bg: #f6f7f8;
+    --panel: #ffffff;
+    --text: #15191e;
+    --muted: #5d6670;
+    --border: #e1e5e9;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --cheap: #15803d;
+    --mid: #ca8a04;
+    --dear: #b91c1c;
+    --off: #8a939c;
+    --shadow: 0 6px 24px rgba(15, 23, 42, .14);
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1215;
+      --panel: #181c20;
+      --text: #e8ecef;
+      --muted: #9aa4ae;
+      --border: #2a3036;
+      --accent: #2dd4bf;
+      --accent-soft: #134e4a;
+      --cheap: #22c55e;
+      --mid: #eab308;
+      --dear: #f87171;
+      --off: #6b7580;
+      --shadow: 0 6px 24px rgba(0, 0, 0, .5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1215; --panel: #181c20; --text: #e8ecef; --muted: #9aa4ae; --border: #2a3036;
+    --accent: #2dd4bf; --accent-soft: #134e4a; --cheap: #22c55e; --mid: #eab308; --dear: #f87171; --off: #6b7580;
+    --shadow: 0 6px 24px rgba(0, 0, 0, .5);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-columns: 380px 1fr; grid-template-rows: 100%;
+    overflow: hidden;
+  }
+  #map { height: 100%; width: 100%; background: var(--bg); }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0; z-index: 500;
+  }
+  header { padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
+  h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.01em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  .controls { padding: 12px 16px; display: grid; gap: 10px; border-bottom: 1px solid var(--border); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  label.lbl { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  input[type="range"] { flex: 1; accent-color: var(--accent); min-width: 0; }
+  .num {
+    width: 76px; display: flex; align-items: center; border: 1px solid var(--border);
+    border-radius: 8px; padding: 0 8px; background: var(--bg);
+  }
+  .num input {
+    width: 100%; border: 0; background: transparent; color: var(--text); font: inherit;
+    padding: 6px 0; text-align: right; outline: none; -moz-appearance: textfield;
+  }
+  .num input::-webkit-outer-spin-button, .num input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .num small { color: var(--muted); margin-left: 3px; }
+  button, .btn {
+    font: inherit; font-size: 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); padding: 7px 12px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+  }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] button.primary { color: #062a26; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button.primary { color: #062a26; } }
+  form.search { display: flex; gap: 8px; }
+  form.search input {
+    flex: 1; min-width: 0; font: inherit; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; padding: 5px 10px; font-size: 13px; }
+  .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+  .check { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .status { padding: 10px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); min-height: 40px; }
+  .status b { color: var(--text); }
+  .status.err { color: var(--dear); }
+  ul#list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
+  ul#list li {
+    padding: 11px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
+    display: grid; grid-template-columns: auto 1fr auto; gap: 2px 12px; align-items: center;
+  }
+  ul#list li:hover, ul#list li.active { background: var(--bg); }
+  .rank { font-size: 12px; color: var(--muted); width: 18px; text-align: right; grid-row: span 2; }
+  .addr { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { font-size: 12px; color: var(--muted); grid-column: 2; }
+  .price { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 17px; grid-row: span 2; text-align: right; }
+  .price small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+  .off .price, .off .addr { color: var(--off); }
+  footer { padding: 8px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
+  footer a { color: inherit; }
+
+  /* Marqueurs */
+  .pin {
+    transform: translate(-50%, -100%); position: absolute; white-space: nowrap;
+    background: var(--c); color: #fff; font: 700 12.5px/1 system-ui, sans-serif;
+    padding: 5px 7px; border-radius: 7px; box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    font-variant-numeric: tabular-nums; border: 2px solid #fff;
+  }
+  .pin::after {
+    content: ""; position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: #fff;
+  }
+  .pin.best { outline: 3px solid var(--c); outline-offset: 1px; font-size: 14px; }
+  .pin.sel { transform: translate(-50%, -100%) scale(1.15); z-index: 1000; }
+  .leaflet-div-icon.pin-wrap { background: none; border: 0; }
+  .me-dot {
+    width: 18px; height: 18px; border-radius: 50%; background: #2563eb; border: 3px solid #fff;
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, .25), 0 1px 4px rgba(0,0,0,.4); cursor: grab;
+  }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); }
+  .leaflet-popup-content { margin: 12px 14px; font-size: 14px; }
+  .pop h3 { margin: 0 0 2px; font-size: 15px; }
+  .pop .big { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 6px 0 2px; }
+  .pop .muted { color: var(--muted); font-size: 12px; }
+  .pop .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .pop .acts a { font-size: 13px; padding: 5px 9px; }
+  .legend {
+    background: var(--panel); color: var(--text); padding: 6px 10px; border-radius: 8px;
+    box-shadow: var(--shadow); font-size: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .legend .bar { width: 90px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--cheap), var(--mid), var(--dear)); }
+
+  #sheetToggle { display: none; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 100%; grid-template-rows: 1fr auto; }
+    #map { grid-row: 1; }
+    aside {
+      grid-row: 2; border-right: 0; border-top: 1px solid var(--border);
+      max-height: 58vh; border-radius: var(--radius) var(--radius) 0 0; box-shadow: var(--shadow);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    header { padding: 10px 16px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    header .sub { display: none; }
+    h1 { font-size: 17px; }
+    #sheetToggle { display: inline-flex; font-size: 13px; padding: 5px 10px; }
+    aside.collapsed ul#list, aside.collapsed footer { display: none; }
+    aside.collapsed .controls form.search, aside.collapsed .controls .opts { display: none; }
+    .controls { padding: 10px 16px; gap: 8px; }
+    ul#list li { padding: 10px 16px; }
+  }
+</style>
+</head>
+<body>
+<aside id="panel">
+  <header>
+    <div>
+      <h1>SP95 <span>autour de moi</span></h1>
+      <p class="sub">Prix du SP95 en temps réel, station par station.</p>
+    </div>
+    <button id="sheetToggle" type="button" aria-expanded="true">Masquer la liste</button>
+  </header>
+
+  <div class="controls">
+    <div class="row">
+      <label class="lbl" for="radiusRange">Rayon</label>
+      <input id="radiusRange" type="range" min="0.5" max="30" step="0.5" value="2.5" aria-label="Rayon de recherche en kilomètres">
+      <div class="num"><input id="radiusNum" type="number" min="0.1" max="50" step="0.1" value="2.5" aria-label="Rayon en km"><small>km</small></div>
+    </div>
+    <div class="row">
+      <button id="locateBtn" class="primary" type="button">◎ Me localiser</button>
+      <button id="refreshBtn" type="button" title="Recharger les prix">↻ Actualiser</button>
+    </div>
+    <form class="search" id="searchForm" autocomplete="off">
+      <input id="searchInput" type="search" placeholder="Ou chercher une adresse, une ville…" aria-label="Adresse">
+      <button type="submit">Aller</button>
+    </form>
+    <div class="row opts" style="justify-content: space-between;">
+      <div class="seg" role="group" aria-label="Trier par">
+        <button type="button" data-sort="price" aria-pressed="true">Moins cher</button>
+        <button type="button" data-sort="dist" aria-pressed="false">Plus proche</button>
+      </div>
+      <label class="check"><input type="checkbox" id="showOff"> Ruptures</label>
+    </div>
+  </div>
+
+  <div class="status" id="status" role="status" aria-live="polite">Recherche de votre position…</div>
+  <ul id="list"></ul>
+  <footer>
+    Données : <a href="https://www.data.gouv.fr/fr/datasets/prix-des-carburants-en-france-flux-instantane-v2-amelioree/" target="_blank" rel="noopener">Prix des carburants en France – Flux instantané – v2</a> (Ministère de l'Économie, licence Ouverte). Position modifiable : cliquez sur la carte ou déplacez le point bleu.
+  </footer>
+</aside>
+
+<div id="map" aria-label="Carte des stations"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const API = "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2/records";
+  const GEOCODER = "https://data.geopf.fr/geocodage/search";
+  const DEFAULT_CENTER = [46.6, 2.4]; // France entière, avant géolocalisation
+  const AUTO_REFRESH_MS = 5 * 60 * 1000;
+
+  // ---------- Préférences locales (facultatives) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("sp95:" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("sp95:" + k, JSON.stringify(v)); } catch {} }
+  };
+
+  // ---------- État ----------
+  const state = {
+    pos: null,                     // [lat, lon]
+    radius: clampRadius(store.get("radius", 2.5)),
+    sort: store.get("sort", "price"),
+    showOff: store.get("showOff", false),
+    stations: [],
+    selected: null,
+    reqId: 0
+  };
+
+  // ---------- Éléments ----------
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    range: $("radiusRange"), num: $("radiusNum"), status: $("status"), list: $("list"),
+    locate: $("locateBtn"), refresh: $("refreshBtn"), form: $("searchForm"), q: $("searchInput"),
+    showOff: $("showOff"), panel: $("panel"), toggle: $("sheetToggle")
+  };
+
+  // ---------- Carte ----------
+  const map = L.map("map", { zoomControl: true, attributionControl: true }).setView(DEFAULT_CENTER, 6);
+  // Fond de carte : Plan IGN (Géoplateforme, accès libre sans clé)
+  L.tileLayer("https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image/png&TILEMATRIX={z}&TILECOL={x}&TILEROW={y}", {
+    maxZoom: 19, minZoom: 2,
+    attribution: '&copy; <a href="https://geoservices.ign.fr/" target="_blank" rel="noopener">IGN – Géoplateforme</a>'
+  }).addTo(map);
+
+  const circle = L.circle(DEFAULT_CENTER, { radius: 0, color: "#0f766e", weight: 2, fillOpacity: 0.06, interactive: false });
+  const meMarker = L.marker(DEFAULT_CENTER, {
+    draggable: true, zIndexOffset: 2000, keyboard: true, title: "Votre position (déplaçable)",
+    icon: L.divIcon({ className: "", html: '<div class="me-dot"></div>', iconSize: [18, 18], iconAnchor: [9, 9] })
+  });
+  const stationLayer = L.layerGroup().addTo(map);
+  const markersById = new Map();
+
+  const legend = L.control({ position: "bottomright" });
+  legend.onAdd = () => {
+    const d = L.DomUtil.create("div", "legend");
+    d.innerHTML = '<span>Moins cher</span><span class="bar"></span><span>Plus cher</span>';
+    return d;
+  };
+  legend.addTo(map);
+
+  meMarker.on("dragend", () => { const p = meMarker.getLatLng(); setPosition([p.lat, p.lng], { fit: false, source: "manual" }); });
+  map.on("click", (e) => setPosition([e.latlng.lat, e.latlng.lng], { fit: false, source: "manual" }));
+
+  // ---------- Utilitaires ----------
+  function clampRadius(v) { v = Number(v); if (!isFinite(v) || v <= 0) return 2.5; return Math.min(50, Math.max(0.1, Math.round(v * 10) / 10)); }
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmtPrice = (p) => p.toLocaleString("fr-FR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  const fmtKm = (m) => m < 1000 ? Math.round(m / 10) * 10 + " m" : (m / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " km";
+  function haversine(a, b) {
+    const R = 6371000, toR = Math.PI / 180;
+    const dLat = (b[0] - a[0]) * toR, dLon = (b[1] - a[1]) * toR;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * toR) * Math.cos(b[0] * toR) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function ago(iso) {
+    if (!iso) return "date inconnue";
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 0) return "à l'instant";
+    if (diff < 3600) return "il y a " + Math.max(1, Math.round(diff / 60)) + " min";
+    if (diff < 86400) return "il y a " + Math.round(diff / 3600) + " h";
+    const j = Math.round(diff / 86400);
+    return "il y a " + j + " jour" + (j > 1 ? "s" : "");
+  }
+  function titleCase(s) {
+    return String(s || "").toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+  }
+  function colorFor(price, min, max) {
+    const cs = getComputedStyle(document.documentElement);
+    if (price == null) return cs.getPropertyValue("--off").trim();
+    const t = max > min ? (price - min) / (max - min) : 0;
+    const c = (n) => cs.getPropertyValue(n).trim();
+    return t < 0.34 ? c("--cheap") : t < 0.67 ? c("--mid") : c("--dear");
+  }
+  function setStatus(html, isErr = false) { els.status.innerHTML = html; els.status.classList.toggle("err", isErr); }
+
+  // ---------- Position ----------
+  function setPosition(pos, { fit = true, source = "gps" } = {}) {
+    state.pos = pos;
+    meMarker.setLatLng(pos);
+    if (!map.hasLayer(meMarker)) meMarker.addTo(map);
+    circle.setLatLng(pos).setRadius(state.radius * 1000);
+    if (!map.hasLayer(circle)) circle.addTo(map);
+    if (fit) map.fitBounds(circle.getBounds(), { padding: [20, 20] });
+    state.source = source;
+    load();
+  }
+
+  function locate() {
+    if (!("geolocation" in navigator)) {
+      setStatus("La géolocalisation n'est pas disponible sur cet appareil. Cherchez une adresse ou cliquez sur la carte.", true);
+      return;
+    }
+    setStatus("Recherche de votre position…");
+    els.locate.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      (p) => { els.locate.disabled = false; setPosition([p.coords.latitude, p.coords.longitude], { fit: true, source: "gps" }); },
+      (err) => {
+        els.locate.disabled = false;
+        const msg = err.code === 1
+          ? "Accès à la position refusé."
+          : "Position indisponible pour le moment.";
+        setStatus(msg + " Cherchez une adresse ou cliquez sur la carte pour choisir un point.", true);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  }
+
+  async function geocode(q) {
+    setStatus("Recherche de « " + esc(q) + " »…");
+    try {
+      const r = await fetch(GEOCODER + "?limit=1&q=" + encodeURIComponent(q));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      const f = j.features && j.features[0];
+      if (!f) { setStatus("Adresse introuvable : « " + esc(q) + " ».", true); return; }
+      const [lon, lat] = f.geometry.coordinates;
+      setPosition([lat, lon], { fit: true, source: "search" });
+    } catch (e) {
+      setStatus("Le service d'adresses ne répond pas (" + esc(e.message) + ").", true);
+    }
+  }
+
+  // ---------- Données ----------
+  async function fetchStations(pos, radiusKm, includeOff) {
+    const pt = `geom'POINT(${pos[1].toFixed(6)} ${pos[0].toFixed(6)})'`;
+    const fuel = includeOff ? `(sp95_prix is not null or sp95_rupture_type is not null)` : `sp95_prix is not null`;
+    const where = `within_distance(geom, ${pt}, ${radiusKm}km) and ${fuel}`;
+    const select = "id,adresse,ville,cp,geom,sp95_prix,sp95_maj,sp95_rupture_type,sp95_rupture_debut,horaires_automate_24_24,carburants_disponibles";
+    const out = [];
+    let offset = 0, total = Infinity;
+    while (offset < total && offset < 2000) {
+      const url = `${API}?select=${encodeURIComponent(select)}&where=${encodeURIComponent(where)}&limit=100&offset=${offset}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      total = j.total_count;
+      out.push(...j.results);
+      if (!j.results.length) break;
+      offset += j.results.length;
+    }
+    return out;
+  }
+
+  async function load() {
+    if (!state.pos) return;
+    const id = ++state.reqId;
+    els.refresh.disabled = true;
+    setStatus(`Chargement des stations dans un rayon de <b>${state.radius.toLocaleString("fr-FR")} km</b>…`);
+    try {
+      const rows = await fetchStations(state.pos, state.radius, state.showOff);
+      if (id !== state.reqId) return; // une requête plus récente a été lancée
+      state.stations = rows
+        .filter((s) => s.geom && isFinite(s.geom.lat) && isFinite(s.geom.lon))
+        .map((s) => ({
+          id: s.id,
+          lat: s.geom.lat, lon: s.geom.lon,
+          adresse: titleCase(s.adresse), ville: titleCase(s.ville), cp: s.cp,
+          prix: s.sp95_prix, maj: s.sp95_maj,
+          rupture: s.sp95_prix == null ? (s.sp95_rupture_type || "rupture") : null,
+          ruptureDebut: s.sp95_rupture_debut,
+          h24: s.horaires_automate_24_24 === "Oui",
+          dist: haversine(state.pos, [s.geom.lat, s.geom.lon])
+        }));
+      state.loadedAt = new Date();
+      render();
+    } catch (e) {
+      if (id !== state.reqId) return;
+      setStatus("Impossible de récupérer les prix (" + esc(e.message) + "). Réessayez avec « Actualiser ».", true);
+    } finally {
+      if (id === state.reqId) els.refresh.disabled = false;
+    }
+  }
+
+  // ---------- Rendu ----------
+  function sorted() {
+    const arr = state.stations.slice();
+    const k = state.sort;
+    arr.sort((a, b) => {
+      if ((a.prix == null) !== (b.prix == null)) return a.prix == null ? 1 : -1;
+      if (k === "price" && a.prix !== b.prix) return a.prix - b.prix;
+      return a.dist - b.dist;
+    });
+    return arr;
+  }
+
+  function popupHtml(s) {
+    const dest = `${s.lat},${s.lon}`;
+    const priceBlock = s.prix != null
+      ? `<div class="big">${fmtPrice(s.prix)} €<span class="muted"> /L</span></div>
+         <div class="muted">Mis à jour ${ago(s.maj)}</div>`
+      : `<div class="big" style="color:var(--off)">SP95 indisponible</div>
+         <div class="muted">Rupture ${esc(s.rupture)}${s.ruptureDebut ? " depuis le " + new Date(s.ruptureDebut).toLocaleDateString("fr-FR") : ""}</div>`;
+    return `<div class="pop">
+      <h3>${esc(s.adresse)}</h3>
+      <div class="muted">${esc(s.cp)} ${esc(s.ville)} · à ${fmtKm(s.dist)}${s.h24 ? " · automate 24/24" : ""}</div>
+      ${priceBlock}
+      <div class="acts">
+        <a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${dest}">Itinéraire</a>
+        <a class="btn" target="_blank" rel="noopener" href="https://waze.com/ul?ll=${dest}&navigate=yes">Waze</a>
+        <a class="btn" target="_blank" rel="noopener" href="https://maps.apple.com/?daddr=${dest}">Plans</a>
+      </div>
+    </div>`;
+  }
+
+  function render() {
+    stationLayer.clearLayers();
+    markersById.clear();
+    els.list.innerHTML = "";
+
+    const list = sorted();
+    const priced = list.filter((s) => s.prix != null);
+    const prices = priced.map((s) => s.prix);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const best = priced.length ? priced.reduce((a, b) => (b.prix < a.prix || (b.prix === a.prix && b.dist < a.dist) ? b : a)) : null;
+
+    list.forEach((s, i) => {
+      const c = colorFor(s.prix, min, max);
+      const label = s.prix != null ? fmtPrice(s.prix) : "—";
+      const icon = L.divIcon({
+        className: "pin-wrap",
+        html: `<div class="pin${best && s.id === best.id ? " best" : ""}" style="--c:${c}">${label}</div>`,
+        iconSize: [0, 0], iconAnchor: [0, 0], popupAnchor: [0, -30]
+      });
+      const m = L.marker([s.lat, s.lon], {
+        icon, title: `${s.adresse} – ${label} €`,
+        zIndexOffset: s.prix == null ? -500 : Math.round(1000 - (s.prix - min) * 1000)
+      }).bindPopup(popupHtml(s), { maxWidth: 280 });
+      m.on("popupopen", () => highlight(s.id, false));
+      m.addTo(stationLayer);
+      markersById.set(s.id, m);
+
+      const li = document.createElement("li");
+      li.dataset.id = s.id;
+      if (s.prix == null) li.classList.add("off");
+      li.innerHTML = `
+        <span class="rank">${s.prix != null ? i + 1 : ""}</span>
+        <span class="addr">${esc(s.adresse)}</span>
+        <span class="price" style="color:${s.prix != null ? c : "var(--off)"}">${s.prix != null ? fmtPrice(s.prix) + " €" : "Rupture"}<small>${s.prix != null ? ago(s.maj) : esc(s.rupture)}</small></span>
+        <span class="meta">${esc(s.ville)} · ${fmtKm(s.dist)}${s.h24 ? " · 24/24" : ""}</span>`;
+      li.addEventListener("click", () => highlight(s.id, true));
+      els.list.appendChild(li);
+    });
+
+    const t = state.loadedAt ? state.loadedAt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
+    const rad = state.radius.toLocaleString("fr-FR");
+    if (!priced.length) {
+      setStatus(`Aucune station avec du SP95 dans un rayon de <b>${rad} km</b>. Augmentez le rayon.`);
+    } else {
+      const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+      setStatus(`<b>${priced.length}</b> station${priced.length > 1 ? "s" : ""} avec du SP95 à moins de <b>${rad} km</b> · de <b>${fmtPrice(min)} €</b> à <b>${fmtPrice(max)} €</b> (moy. ${fmtPrice(avg)} €) · ${t}`);
+    }
+  }
+
+  function highlight(id, fly) {
+    state.selected = id;
+    document.querySelectorAll("#list li").forEach((li) => li.classList.toggle("active", String(li.dataset.id) === String(id)));
+    document.querySelectorAll(".pin.sel").forEach((p) => p.classList.remove("sel"));
+    const m = markersById.get(id);
+    if (!m) return;
+    const el = m.getElement() && m.getElement().querySelector(".pin");
+    if (el) el.classList.add("sel");
+    if (fly) {
+      map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 0.5 });
+      m.openPopup();
+    } else {
+      const li = els.list.querySelector(`li[data-id="${CSS.escape(String(id))}"]`);
+      if (li) li.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }
+
+  // ---------- Contrôles ----------
+  function applyRadius(v, { fromRange = false } = {}) {
+    state.radius = clampRadius(v);
+    store.set("radius", state.radius);
+    if (!fromRange) els.range.value = Math.min(30, Math.max(0.5, state.radius));
+    els.num.value = state.radius;
+    if (state.pos) {
+      circle.setRadius(state.radius * 1000);
+      map.fitBounds(circle.getBounds(), { padding: [20, 20] });
+    }
+  }
+  let radiusTimer;
+  function radiusChanged(v, opts) {
+    applyRadius(v, opts);
+    clearTimeout(radiusTimer);
+    radiusTimer = setTimeout(load, 350);
+  }
+  els.range.addEventListener("input", () => radiusChanged(els.range.value, { fromRange: true }));
+  els.num.addEventListener("change", () => radiusChanged(els.num.value));
+  els.num.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); radiusChanged(els.num.value); } });
+
+  els.locate.addEventListener("click", locate);
+  els.refresh.addEventListener("click", load);
+  els.form.addEventListener("submit", (e) => { e.preventDefault(); const q = els.q.value.trim(); if (q.length >= 3) geocode(q); });
+
+  document.querySelectorAll(".seg button").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.sort === state.sort));
+    b.addEventListener("click", () => {
+      state.sort = b.dataset.sort; store.set("sort", state.sort);
+      document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      if (state.stations.length) render();
+    });
+  });
+
+  els.showOff.checked = state.showOff;
+  els.showOff.addEventListener("change", () => { state.showOff = els.showOff.checked; store.set("showOff", state.showOff); load(); });
+
+  els.toggle.addEventListener("click", () => {
+    const collapsed = els.panel.classList.toggle("collapsed");
+    els.toggle.textContent = collapsed ? "Afficher la liste" : "Masquer la liste";
+    els.toggle.setAttribute("aria-expanded", String(!collapsed));
+    setTimeout(() => map.invalidateSize(), 50);
+  });
+
+  // Actualisation automatique tant que la page est visible
+  setInterval(() => { if (!document.hidden && state.pos) load(); }, AUTO_REFRESH_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && state.loadedAt && Date.now() - state.loadedAt > AUTO_REFRESH_MS) load();
+  });
+
+  // ---------- Démarrage ----------
+  applyRadius(state.radius);
+  locate();
+})();
+</script>
+</body>
+</html>
