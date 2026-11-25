@@ -312,23 +312,33 @@
     load();
   }
 
-  function locate() {
+  function locate({ reopen = false } = {}) {
+    state.lastLocateAt = Date.now();
     if (!("geolocation" in navigator)) {
+      if (reopen) { load(); return; }
       setStatus("La géolocalisation n'est pas disponible sur cet appareil. Cherchez une adresse ou cliquez sur la carte.", true);
       return;
     }
-    setStatus("Recherche de votre position…");
+    setStatus(reopen ? "Mise à jour de votre position…" : "Recherche de votre position…");
     els.locate.disabled = true;
     navigator.geolocation.getCurrentPosition(
-      (p) => { els.locate.disabled = false; setPosition([p.coords.latitude, p.coords.longitude], { fit: true, source: "gps" }); },
+      (p) => {
+        els.locate.disabled = false;
+        const pos = [p.coords.latitude, p.coords.longitude];
+        // À la réouverture, si l'appareil n'a quasiment pas bougé, on garde le cadrage
+        // de la carte et on se contente de rafraîchir les prix.
+        const moved = !state.pos || haversine(state.pos, pos) > 75;
+        setPosition(pos, { fit: !reopen || moved, source: "gps" });
+      },
       (err) => {
         els.locate.disabled = false;
+        if (reopen && state.pos) { load(); return; } // position indisponible : on garde l'ancienne
         const msg = err.code === 1
           ? "Accès à la position refusé."
           : "Position indisponible pour le moment.";
         setStatus(msg + " Cherchez une adresse ou cliquez sur la carte pour choisir un point.", true);
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: reopen ? 0 : 30000 }
     );
   }
 
@@ -520,7 +530,7 @@
   els.num.addEventListener("change", () => radiusChanged(els.num.value));
   els.num.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); radiusChanged(els.num.value); } });
 
-  els.locate.addEventListener("click", locate);
+  els.locate.addEventListener("click", () => locate());
   els.refresh.addEventListener("click", load);
   els.form.addEventListener("submit", (e) => { e.preventDefault(); const q = els.q.value.trim(); if (q.length >= 3) geocode(q); });
 
@@ -545,9 +555,23 @@
 
   // Actualisation automatique tant que la page est visible
   setInterval(() => { if (!document.hidden && state.pos) load(); }, AUTO_REFRESH_MS);
+  // Réouverture de l'application (iPhone : retour depuis l'écran d'accueil ou le sélecteur
+  // d'apps, la page n'est pas rechargée) → on reprend la position GPS et les prix.
+  // Si la position avait été choisie à la main (adresse, clic, glisser), on ne la remplace
+  // qu'après une absence de plus de 5 minutes.
+  const MANUAL_KEEP_MS = 5 * 60 * 1000;
+  let hiddenAt = 0;
+  function onReopen() {
+    if (Date.now() - (state.lastLocateAt || 0) < 3000) return; // évite les doublons d'événements
+    const away = hiddenAt ? Date.now() - hiddenAt : Infinity;
+    if (state.source === "gps" || !state.pos || away > MANUAL_KEEP_MS) locate({ reopen: true });
+    else if (state.loadedAt && Date.now() - state.loadedAt > AUTO_REFRESH_MS) load();
+  }
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && state.loadedAt && Date.now() - state.loadedAt > AUTO_REFRESH_MS) load();
+    if (document.hidden) hiddenAt = Date.now();
+    else onReopen();
   });
+  window.addEventListener("pageshow", (e) => { if (e.persisted) onReopen(); });
 
   // ---------- Démarrage ----------
   applyRadius(state.radius);
