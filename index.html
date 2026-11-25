@@ -57,7 +57,13 @@
     background: var(--panel); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; min-height: 0; z-index: 500;
   }
-  header { padding: 16px 16px 12px; border-bottom: 1px solid var(--border); }
+  header {
+    padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  }
+  header > div { min-width: 0; }
+  .mini { display: none; margin: 2px 0 0; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini.err { color: var(--dear); }
   h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.01em; }
   h1 span { color: var(--accent); }
   .sub { color: var(--muted); font-size: 13px; margin: 0; }
@@ -142,7 +148,20 @@
   }
   .legend .bar { width: 90px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--cheap), var(--mid), var(--dear)); }
 
-  #sheetToggle { display: none; }
+  #sheetToggle { flex: none; font-size: 13px; padding: 5px 10px; }
+
+  /* Interface réduite : seule une petite carte flottante reste visible, la carte prend tout l'écran */
+  body.ui-collapsed { grid-template-columns: 100%; }
+  body.ui-collapsed aside {
+    position: absolute; top: 12px; left: 56px; width: min(340px, calc(100% - 68px));
+    border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); z-index: 1001;
+  }
+  body.ui-collapsed header { border-bottom: 0; padding: 10px 12px; align-items: center; }
+  body.ui-collapsed h1 { font-size: 16px; }
+  body.ui-collapsed .sub, body.ui-collapsed .controls, body.ui-collapsed .status,
+  body.ui-collapsed ul#list, body.ui-collapsed footer { display: none; }
+  body.ui-collapsed .mini { display: block; }
+  .locate-ctl a { font-size: 18px; line-height: 30px; cursor: pointer; }
 
   @media (max-width: 760px) {
     body { grid-template-columns: 100%; grid-template-rows: 1fr auto; }
@@ -152,12 +171,15 @@
       max-height: 58vh; border-radius: var(--radius) var(--radius) 0 0; box-shadow: var(--shadow);
       padding-bottom: env(safe-area-inset-bottom);
     }
-    header { padding: 10px 16px 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    header { padding: 10px 16px 8px; align-items: center; }
     header .sub { display: none; }
     h1 { font-size: 17px; }
-    #sheetToggle { display: inline-flex; font-size: 13px; padding: 5px 10px; }
-    aside.collapsed ul#list, aside.collapsed footer { display: none; }
-    aside.collapsed .controls form.search, aside.collapsed .controls .opts { display: none; }
+    body.ui-collapsed { grid-template-rows: 100%; }
+    body.ui-collapsed aside {
+      top: auto; left: 12px; right: 12px; width: auto; max-height: none;
+      bottom: calc(22px + env(safe-area-inset-bottom)); padding-bottom: 0;
+    }
+    body.ui-collapsed .legend { display: none; }
     .controls { padding: 10px 16px; gap: 8px; }
     ul#list li { padding: 10px 16px; }
   }
@@ -169,8 +191,9 @@
     <div>
       <h1>SP95 <span>autour de moi</span></h1>
       <p class="sub">Prix du SP95 en temps réel, station par station.</p>
+      <p class="mini" id="mini" aria-hidden="true"></p>
     </div>
-    <button id="sheetToggle" type="button" aria-expanded="true">Masquer la liste</button>
+    <button id="sheetToggle" type="button" aria-expanded="true" aria-controls="panel">▾ Réduire</button>
   </header>
 
   <div class="controls">
@@ -238,7 +261,7 @@
   const els = {
     range: $("radiusRange"), num: $("radiusNum"), status: $("status"), list: $("list"),
     locate: $("locateBtn"), refresh: $("refreshBtn"), form: $("searchForm"), q: $("searchInput"),
-    showOff: $("showOff"), panel: $("panel"), toggle: $("sheetToggle")
+    showOff: $("showOff"), panel: $("panel"), toggle: $("sheetToggle"), mini: $("mini")
   };
 
   // ---------- Carte ----------
@@ -298,7 +321,10 @@
     const c = (n) => cs.getPropertyValue(n).trim();
     return t < 0.34 ? c("--cheap") : t < 0.67 ? c("--mid") : c("--dear");
   }
-  function setStatus(html, isErr = false) { els.status.innerHTML = html; els.status.classList.toggle("err", isErr); }
+  function setStatus(html, isErr = false) {
+    els.status.innerHTML = html; els.status.classList.toggle("err", isErr);
+    els.mini.textContent = els.status.textContent; els.mini.classList.toggle("err", isErr);
+  }
 
   // ---------- Position ----------
   function setPosition(pos, { fit = true, source = "gps" } = {}) {
@@ -489,6 +515,7 @@
     } else {
       const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
       setStatus(`<b>${priced.length}</b> station${priced.length > 1 ? "s" : ""} avec du SP95 à moins de <b>${rad} km</b> · de <b>${fmtPrice(min)} €</b> à <b>${fmtPrice(max)} €</b> (moy. ${fmtPrice(avg)} €) · ${t}${stale}`);
+      els.mini.textContent = `${priced.length} station${priced.length > 1 ? "s" : ""} · ${fmtPrice(min)} à ${fmtPrice(max)} € · ${rad} km`;
     }
   }
 
@@ -546,12 +573,27 @@
   els.showOff.checked = state.showOff;
   els.showOff.addEventListener("change", () => { state.showOff = els.showOff.checked; store.set("showOff", state.showOff); load(); });
 
-  els.toggle.addEventListener("click", () => {
-    const collapsed = els.panel.classList.toggle("collapsed");
-    els.toggle.textContent = collapsed ? "Afficher la liste" : "Masquer la liste";
+  function setCollapsed(collapsed) {
+    document.body.classList.toggle("ui-collapsed", collapsed);
+    els.toggle.textContent = collapsed ? "▴ Agrandir" : "▾ Réduire";
+    els.toggle.title = collapsed ? "Afficher les réglages et la liste" : "Réduire l'interface pour agrandir la carte";
     els.toggle.setAttribute("aria-expanded", String(!collapsed));
-    setTimeout(() => map.invalidateSize(), 50);
-  });
+    store.set("collapsed", collapsed);
+    map.invalidateSize();
+  }
+  els.toggle.addEventListener("click", () => setCollapsed(!document.body.classList.contains("ui-collapsed")));
+  setCollapsed(store.get("collapsed", false));
+
+  // Bouton « Me localiser » directement sur la carte (utile quand l'interface est réduite)
+  const locateCtl = L.control({ position: "topleft" });
+  locateCtl.onAdd = () => {
+    const d = L.DomUtil.create("div", "leaflet-bar locate-ctl");
+    d.innerHTML = '<a href="#" role="button" title="Me localiser" aria-label="Me localiser">◎</a>';
+    L.DomEvent.disableClickPropagation(d);
+    d.firstChild.addEventListener("click", (e) => { e.preventDefault(); locate(); });
+    return d;
+  };
+  locateCtl.addTo(map);
 
   // Actualisation automatique tant que la page est visible
   setInterval(() => { if (!document.hidden && state.pos) load(); }, AUTO_REFRESH_MS);
