@@ -214,6 +214,7 @@
   const GEOCODER = "https://data.geopf.fr/geocodage/search";
   const DEFAULT_CENTER = [46.6, 2.4]; // France entière, avant géolocalisation
   const AUTO_REFRESH_MS = 5 * 60 * 1000;
+  const MAX_PRICE_AGE_MS = 7 * 24 * 3600 * 1000; // prix plus anciens masqués
 
   // ---------- Préférences locales (facultatives) ----------
   const store = {
@@ -375,7 +376,7 @@
     try {
       const rows = await fetchStations(state.pos, state.radius, state.showOff);
       if (id !== state.reqId) return; // une requête plus récente a été lancée
-      state.stations = rows
+      const all = rows
         .filter((s) => s.geom && isFinite(s.geom.lat) && isFinite(s.geom.lon))
         .map((s) => ({
           id: s.id,
@@ -387,6 +388,9 @@
           h24: s.horaires_automate_24_24 === "Oui",
           dist: haversine(state.pos, [s.geom.lat, s.geom.lon])
         }));
+      const isStale = (s) => s.prix != null && (!s.maj || Date.now() - new Date(s.maj).getTime() > MAX_PRICE_AGE_MS);
+      state.stations = all.filter((s) => !isStale(s));
+      state.staleCount = all.length - state.stations.length;
       state.loadedAt = new Date();
       render();
     } catch (e) {
@@ -469,11 +473,12 @@
 
     const t = state.loadedAt ? state.loadedAt.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "";
     const rad = state.radius.toLocaleString("fr-FR");
+    const stale = state.staleCount ? ` · ${state.staleCount} prix de plus de 7 jours masqué${state.staleCount > 1 ? "s" : ""}` : "";
     if (!priced.length) {
-      setStatus(`Aucune station avec du SP95 dans un rayon de <b>${rad} km</b>. Augmentez le rayon.`);
+      setStatus(`Aucune station avec du SP95 dans un rayon de <b>${rad} km</b>${stale}. Augmentez le rayon.`);
     } else {
       const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
-      setStatus(`<b>${priced.length}</b> station${priced.length > 1 ? "s" : ""} avec du SP95 à moins de <b>${rad} km</b> · de <b>${fmtPrice(min)} €</b> à <b>${fmtPrice(max)} €</b> (moy. ${fmtPrice(avg)} €) · ${t}`);
+      setStatus(`<b>${priced.length}</b> station${priced.length > 1 ? "s" : ""} avec du SP95 à moins de <b>${rad} km</b> · de <b>${fmtPrice(min)} €</b> à <b>${fmtPrice(max)} €</b> (moy. ${fmtPrice(avg)} €) · ${t}${stale}`);
     }
   }
 
