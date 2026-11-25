@@ -161,27 +161,51 @@
   body.ui-collapsed .sub, body.ui-collapsed .controls, body.ui-collapsed .status,
   body.ui-collapsed ul#list, body.ui-collapsed footer { display: none; }
   body.ui-collapsed .mini { display: block; }
-  .locate-ctl a { font-size: 18px; line-height: 30px; cursor: pointer; }
+  body.ui-collapsed header { cursor: pointer; }
+
+  /* Barre d'outils toujours visible, superposée à la carte */
+  #mapbar {
+    position: absolute; top: 12px; right: 12px; width: 380px; z-index: 1002;
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 6px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+  }
+  .icon-btn { width: 40px; height: 40px; padding: 0; justify-content: center; flex: none; border-radius: 10px; }
+  .icon-btn svg { width: 22px; height: 22px; }
+  .icon-btn.primary svg { stroke: currentColor; }
+  .icon-btn:disabled { cursor: progress; opacity: .85; }
+  .icon-btn:disabled svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #mapbar .num { width: 72px; }
+  .leaflet-top.leaflet-right { top: 70px; }
 
   @media (max-width: 760px) {
-    body { grid-template-columns: 100%; grid-template-rows: 1fr auto; }
-    #map { grid-row: 1; }
+    /* La carte occupe tout l'écran ; le panneau glisse par-dessus, en bas */
+    body { grid-template-columns: 100%; grid-template-rows: 100%; }
+    #map { grid-row: 1; grid-column: 1; }
     aside {
-      grid-row: 2; border-right: 0; border-top: 1px solid var(--border);
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 1001;
+      border-right: 0; border-top: 1px solid var(--border);
       max-height: 58vh; border-radius: var(--radius) var(--radius) 0 0; box-shadow: var(--shadow);
       padding-bottom: env(safe-area-inset-bottom);
     }
-    header { padding: 10px 16px 8px; align-items: center; }
+    header { padding: 16px 16px 8px; align-items: center; position: relative; touch-action: none; }
+    header::before {
+      content: ""; position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+      width: 38px; height: 5px; border-radius: 3px; background: var(--border);
+    }
     header .sub { display: none; }
     h1 { font-size: 17px; }
-    body.ui-collapsed { grid-template-rows: 100%; }
     body.ui-collapsed aside {
       top: auto; left: 12px; right: 12px; width: auto; max-height: none;
       bottom: calc(22px + env(safe-area-inset-bottom)); padding-bottom: 0;
     }
-    body.ui-collapsed .legend { display: none; }
+    body.ui-collapsed header { padding: 14px 12px 10px; }
     .controls { padding: 10px 16px; gap: 8px; }
     ul#list li { padding: 10px 16px; }
+    #mapbar { top: calc(10px + env(safe-area-inset-top)); left: 10px; right: 10px; width: auto; }
+    .leaflet-control-zoom { display: none; }
+    .leaflet-top.leaflet-right { top: calc(62px + env(safe-area-inset-top)); }
+    .leaflet-top.leaflet-right .leaflet-control { margin-right: 10px; }
   }
 </style>
 </head>
@@ -197,17 +221,8 @@
   </header>
 
   <div class="controls">
-    <div class="row">
-      <label class="lbl" for="radiusRange">Rayon</label>
-      <input id="radiusRange" type="range" min="0.5" max="30" step="0.5" value="2.5" aria-label="Rayon de recherche en kilomètres">
-      <div class="num"><input id="radiusNum" type="number" min="0.1" max="50" step="0.1" value="2.5" aria-label="Rayon en km"><small>km</small></div>
-    </div>
-    <div class="row">
-      <button id="locateBtn" class="primary" type="button">◎ Me localiser</button>
-      <button id="refreshBtn" type="button" title="Recharger les prix">↻ Actualiser</button>
-    </div>
     <form class="search" id="searchForm" autocomplete="off">
-      <input id="searchInput" type="search" placeholder="Ou chercher une adresse, une ville…" aria-label="Adresse">
+      <input id="searchInput" type="search" placeholder="Chercher une adresse, une ville…" aria-label="Adresse">
       <button type="submit">Aller</button>
     </form>
     <div class="row opts" style="justify-content: space-between;">
@@ -227,6 +242,17 @@
 </aside>
 
 <div id="map" aria-label="Carte des stations"></div>
+
+<div id="mapbar" role="toolbar" aria-label="Position et rayon">
+  <button id="locateBtn" class="icon-btn primary" type="button" title="Me localiser" aria-label="Me localiser">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><path d="M12 1.5v3.5M12 19v3.5M1.5 12H5M19 12h3.5"/></svg>
+  </button>
+  <button id="refreshBtn" class="icon-btn" type="button" title="Actualiser les prix" aria-label="Actualiser les prix">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg>
+  </button>
+  <input id="radiusRange" type="range" min="0.5" max="30" step="0.5" value="2.5" aria-label="Rayon de recherche en kilomètres">
+  <div class="num"><input id="radiusNum" type="number" inputmode="decimal" min="0.1" max="50" step="0.1" value="2.5" aria-label="Rayon en km"><small>km</small></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -280,7 +306,7 @@
   const stationLayer = L.layerGroup().addTo(map);
   const markersById = new Map();
 
-  const legend = L.control({ position: "bottomright" });
+  const legend = L.control({ position: "topright" });
   legend.onAdd = () => {
     const d = L.DomUtil.create("div", "legend");
     d.innerHTML = '<span>Moins cher</span><span class="bar"></span><span>Plus cher</span>';
@@ -289,7 +315,11 @@
   legend.addTo(map);
 
   meMarker.on("dragend", () => { const p = meMarker.getLatLng(); setPosition([p.lat, p.lng], { fit: false, source: "manual" }); });
-  map.on("click", (e) => setPosition([e.latlng.lat, e.latlng.lng], { fit: false, source: "manual" }));
+  let autoCollapsedAt = 0; // un tap qui sert à réduire l'interface ne déplace pas la position
+  map.on("click", (e) => {
+    if (Date.now() - autoCollapsedAt < 700) return;
+    setPosition([e.latlng.lat, e.latlng.lng], { fit: false, source: "manual" });
+  });
 
   // ---------- Utilitaires ----------
   function clampRadius(v) { v = Number(v); if (!isFinite(v) || v <= 0) return 2.5; return Math.min(50, Math.max(0.1, Math.round(v * 10) / 10)); }
@@ -321,6 +351,26 @@
     const c = (n) => cs.getPropertyValue(n).trim();
     return t < 0.34 ? c("--cheap") : t < 0.67 ? c("--mid") : c("--dear");
   }
+  const isMobile = window.matchMedia("(max-width: 760px)");
+  const isCollapsed = () => document.body.classList.contains("ui-collapsed");
+
+  // Cadre le cercle de recherche dans la partie de carte réellement visible
+  // (sous la barre d'outils et, sur téléphone, au-dessus du panneau).
+  function fitCircle() {
+    if (!state.pos) return;
+    const m = map.getContainer().getBoundingClientRect();
+    const bar = $("mapbar").getBoundingClientRect();
+    const top = Math.max(20, bar.bottom - m.top + 12);
+    let bottom = 20;
+    if (isMobile.matches) {
+      // panneau ouvert : il peut encore grandir jusqu'à 58 % de l'écran une fois la liste chargée
+      const sheet = isCollapsed() ? m.bottom - els.panel.getBoundingClientRect().top
+                                  : Math.max(m.bottom - els.panel.getBoundingClientRect().top, window.innerHeight * 0.58);
+      bottom = Math.max(20, sheet + 12);
+    }
+    map.fitBounds(circle.getBounds(), { paddingTopLeft: [20, top], paddingBottomRight: [20, bottom] });
+  }
+
   function setStatus(html, isErr = false) {
     els.status.innerHTML = html; els.status.classList.toggle("err", isErr);
     els.mini.textContent = els.status.textContent; els.mini.classList.toggle("err", isErr);
@@ -333,7 +383,7 @@
     if (!map.hasLayer(meMarker)) meMarker.addTo(map);
     circle.setLatLng(pos).setRadius(state.radius * 1000);
     if (!map.hasLayer(circle)) circle.addTo(map);
-    if (fit) map.fitBounds(circle.getBounds(), { padding: [20, 20] });
+    if (fit) fitCircle();
     state.source = source;
     load();
   }
@@ -503,7 +553,10 @@
         <span class="addr">${esc(s.adresse)}</span>
         <span class="price" style="color:${s.prix != null ? c : "var(--off)"}">${s.prix != null ? fmtPrice(s.prix) + " €" : "Rupture"}<small>${s.prix != null ? ago(s.maj) : esc(s.rupture)}</small></span>
         <span class="meta">${esc(s.ville)} · ${fmtKm(s.dist)}${s.h24 ? " · 24/24" : ""}</span>`;
-      li.addEventListener("click", () => highlight(s.id, true));
+      li.addEventListener("click", () => {
+        if (isMobile.matches) setCollapsed(true); // sur téléphone, on libère la carte pour voir la station
+        highlight(s.id, true);
+      });
       els.list.appendChild(li);
     });
 
@@ -544,7 +597,7 @@
     els.num.value = state.radius;
     if (state.pos) {
       circle.setRadius(state.radius * 1000);
-      map.fitBounds(circle.getBounds(), { padding: [20, 20] });
+      fitCircle();
     }
   }
   let radiusTimer;
@@ -581,19 +634,33 @@
     store.set("collapsed", collapsed);
     map.invalidateSize();
   }
-  els.toggle.addEventListener("click", () => setCollapsed(!document.body.classList.contains("ui-collapsed")));
+  els.toggle.addEventListener("click", () => setCollapsed(!isCollapsed()));
   setCollapsed(store.get("collapsed", false));
 
-  // Bouton « Me localiser » directement sur la carte (utile quand l'interface est réduite)
-  const locateCtl = L.control({ position: "topleft" });
-  locateCtl.onAdd = () => {
-    const d = L.DomUtil.create("div", "leaflet-bar locate-ctl");
-    d.innerHTML = '<a href="#" role="button" title="Me localiser" aria-label="Me localiser">◎</a>';
-    L.DomEvent.disableClickPropagation(d);
-    d.firstChild.addEventListener("click", (e) => { e.preventDefault(); locate(); });
-    return d;
-  };
-  locateCtl.addTo(map);
+  // Sur téléphone : toucher la carte (déplacement, zoom, tap) réduit l'interface.
+  map.getContainer().addEventListener("pointerdown", (e) => {
+    if (!isMobile.matches || isCollapsed()) return;
+    if (e.target.closest(".leaflet-control")) return;
+    autoCollapsedAt = Date.now();
+    setCollapsed(true);
+  }, { passive: true });
+
+  // L'interface réduite revient d'un tap sur le bandeau ou d'un glissement vers le haut ;
+  // un glissement vers le bas sur l'en-tête la réduit.
+  const header = els.panel.querySelector("header");
+  header.addEventListener("click", (e) => {
+    if (e.target.closest("#sheetToggle")) return;
+    if (isCollapsed()) setCollapsed(false);
+  });
+  let touchY = null;
+  header.addEventListener("touchstart", (e) => { touchY = e.touches[0].clientY; }, { passive: true });
+  header.addEventListener("touchend", (e) => {
+    if (touchY === null) return;
+    const dy = e.changedTouches[0].clientY - touchY;
+    touchY = null;
+    if (isCollapsed() && dy < -25) setCollapsed(false);
+    else if (!isCollapsed() && isMobile.matches && dy > 40) setCollapsed(true);
+  }, { passive: true });
 
   // Actualisation automatique tant que la page est visible
   setInterval(() => { if (!document.hidden && state.pos) load(); }, AUTO_REFRESH_MS);
