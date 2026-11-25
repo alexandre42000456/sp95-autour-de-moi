@@ -1,0 +1,42 @@
+name: Mise à jour des enseignes
+
+# Régénère brands.json (identifiant de station -> enseigne) depuis OpenStreetMap
+# chaque lundi, ou à la demande depuis l'onglet Actions.
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  brands:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Générer brands.json
+        run: python3 scripts/build_brands.py brands.json
+
+      - name: Publier si le fichier a changé
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- brands.json; then
+            echo "Aucun changement."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add brands.json
+          git commit -m "Mise à jour des enseignes (OpenStreetMap)"
+          git push
+          # Les push faits avec le jeton d'Actions ne relancent pas toujours GitHub Pages
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" || true

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SP95 autour de moi</title>
-<meta name="description" content="Stations proposant du SP95 et leur prix en temps réel dans un rayon réglable autour de votre position. Données : Prix des carburants en France – Flux instantané – v2 (data.gouv.fr).">
+<title>SP95 et E10 autour de moi</title>
+<meta name="description" content="Stations proposant du SP95 ou de l'E10 et leur prix en temps réel dans un rayon réglable autour de votre position. Données : Prix des carburants en France – Flux instantané – v2 (data.gouv.fr).">
 <meta name="theme-color" content="#1d4ed8">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
@@ -109,7 +109,9 @@
   }
   ul#list li:hover, ul#list li.active { background: var(--bg); }
   .rank { font-size: 12px; color: var(--muted); width: 18px; text-align: right; grid-row: span 2; }
-  .addr { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .addr { font-weight: 500; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .addr .brand { font-weight: 700; }
+  .pop-brand { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 2px; }
   .meta { font-size: 12px; color: var(--muted); grid-column: 2; }
   .price { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 17px; grid-row: span 2; text-align: right; }
   .price small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
@@ -128,6 +130,9 @@
     content: ""; position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
     border: 5px solid transparent; border-top-color: #fff;
   }
+  .pin small { font-size: 9.5px; font-weight: 700; margin-left: 3px; opacity: .9; letter-spacing: .02em; }
+  .pop .big.alt { font-size: 17px; margin-top: 8px; }
+  .fuel-tag { font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 5px; background: var(--accent-soft); color: var(--text); vertical-align: middle; }
   .pin.best { outline: 3px solid var(--c); outline-offset: 1px; font-size: 14px; }
   .pin.sel { transform: translate(-50%, -100%) scale(1.15); z-index: 1000; }
   .leaflet-div-icon.pin-wrap { background: none; border: 0; }
@@ -213,8 +218,8 @@
 <aside id="panel">
   <header>
     <div>
-      <h1>SP95 <span>autour de moi</span></h1>
-      <p class="sub">Prix du SP95 en temps réel, station par station.</p>
+      <h1>SP95 · E10 <span>autour de moi</span></h1>
+      <p class="sub">Prix du SP95 ou de l'E10 en temps réel, station par station.</p>
       <p class="mini" id="mini" aria-hidden="true"></p>
     </div>
     <button id="sheetToggle" type="button" aria-expanded="true" aria-controls="panel">▾ Réduire</button>
@@ -237,7 +242,7 @@
   <div class="status" id="status" role="status" aria-live="polite">Recherche de votre position…</div>
   <ul id="list"></ul>
   <footer>
-    Données : <a href="https://www.data.gouv.fr/fr/datasets/prix-des-carburants-en-france-flux-instantane-v2-amelioree/" target="_blank" rel="noopener">Prix des carburants en France – Flux instantané – v2</a> (Ministère de l'Économie, licence Ouverte). Position modifiable : cliquez sur la carte ou déplacez le point bleu.
+    Données : <a href="https://www.data.gouv.fr/fr/datasets/prix-des-carburants-en-france-flux-instantane-v2-amelioree/" target="_blank" rel="noopener">Prix des carburants en France – Flux instantané – v2</a> (Ministère de l'Économie, licence Ouverte). Enseignes : © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">contributeurs OpenStreetMap</a> (ODbL). Position modifiable : cliquez sur la carte ou déplacez le point bleu.
   </footer>
 </aside>
 
@@ -262,6 +267,11 @@
   const API = "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/prix-des-carburants-en-france-flux-instantane-v2/records";
   const GEOCODER = "https://data.geopf.fr/geocodage/search";
   const DEFAULT_CENTER = [46.6, 2.4]; // France entière, avant géolocalisation
+  // ---------- Carburant(s) suivi(s) ----------
+  const FUELS = [{ key: "sp95", label: "SP95" }, { key: "e10", label: "E10" }];
+  const FUEL_LABEL = "SP95/E10";
+  const FUEL_TEXT = "du SP95 ou de l'E10";
+
   const AUTO_REFRESH_MS = 5 * 60 * 1000;
   const MAX_PRICE_AGE_MS = 7 * 24 * 3600 * 1000; // prix plus anciens masqués
 
@@ -436,9 +446,11 @@
   // ---------- Données ----------
   async function fetchStations(pos, radiusKm, includeOff) {
     const pt = `geom'POINT(${pos[1].toFixed(6)} ${pos[0].toFixed(6)})'`;
-    const fuel = includeOff ? `(sp95_prix is not null or sp95_rupture_type is not null)` : `sp95_prix is not null`;
-    const where = `within_distance(geom, ${pt}, ${radiusKm}km) and ${fuel}`;
-    const select = "id,adresse,ville,cp,geom,sp95_prix,sp95_maj,sp95_rupture_type,sp95_rupture_debut,horaires_automate_24_24,carburants_disponibles";
+    const conds = FUELS.map((f) => `${f.key}_prix is not null`);
+    if (includeOff) FUELS.forEach((f) => conds.push(`${f.key}_rupture_type is not null`));
+    const where = `within_distance(geom, ${pt}, ${radiusKm}km) and (${conds.join(" or ")})`;
+    const select = ["id,adresse,ville,cp,geom,horaires_automate_24_24",
+      ...FUELS.map((f) => `${f.key}_prix,${f.key}_maj,${f.key}_rupture_type,${f.key}_rupture_debut`)].join(",");
     const out = [];
     let offset = 0, total = Infinity;
     while (offset < total && offset < 2000) {
@@ -462,21 +474,33 @@
     try {
       const rows = await fetchStations(state.pos, state.radius, state.showOff);
       if (id !== state.reqId) return; // une requête plus récente a été lancée
-      const all = rows
-        .filter((s) => s.geom && isFinite(s.geom.lat) && isFinite(s.geom.lon))
-        .map((s) => ({
+      const fresh = (iso) => iso && Date.now() - new Date(iso).getTime() <= MAX_PRICE_AGE_MS;
+      let staleCount = 0;
+      state.stations = [];
+      for (const s of rows) {
+        if (!s.geom || !isFinite(s.geom.lat) || !isFinite(s.geom.lon)) continue;
+        // Prix de chaque carburant suivi ; ceux de plus de 7 jours sont ignorés
+        const withPrice = FUELS.filter((f) => s[f.key + "_prix"] != null);
+        const fuels = withPrice
+          .filter((f) => fresh(s[f.key + "_maj"]))
+          .map((f) => ({ label: f.label, prix: s[f.key + "_prix"], maj: s[f.key + "_maj"] }))
+          .sort((a, b) => a.prix - b.prix);
+        if (withPrice.length && !fuels.length) { staleCount++; continue; }
+        const rup = FUELS.find((f) => s[f.key + "_rupture_type"]);
+        const best = fuels[0];
+        state.stations.push({
           id: s.id,
           lat: s.geom.lat, lon: s.geom.lon,
           adresse: titleCase(s.adresse), ville: titleCase(s.ville), cp: s.cp,
-          prix: s.sp95_prix, maj: s.sp95_maj,
-          rupture: s.sp95_prix == null ? (s.sp95_rupture_type || "rupture") : null,
-          ruptureDebut: s.sp95_rupture_debut,
+          fuels,
+          prix: best ? best.prix : null, maj: best ? best.maj : null, fuel: best ? best.label : null,
+          rupture: best ? null : ((rup && s[rup.key + "_rupture_type"]) || "rupture"),
+          ruptureDebut: !best && rup ? s[rup.key + "_rupture_debut"] : null,
           h24: s.horaires_automate_24_24 === "Oui",
           dist: haversine(state.pos, [s.geom.lat, s.geom.lon])
-        }));
-      const isStale = (s) => s.prix != null && (!s.maj || Date.now() - new Date(s.maj).getTime() > MAX_PRICE_AGE_MS);
-      state.stations = all.filter((s) => !isStale(s));
-      state.staleCount = all.length - state.stations.length;
+        });
+      }
+      state.staleCount = staleCount;
       state.loadedAt = new Date();
       render();
     } catch (e) {
@@ -485,6 +509,23 @@
     } finally {
       if (id === state.reqId) els.refresh.disabled = false;
     }
+  }
+
+  // ---------- Enseignes (OpenStreetMap) ----------
+  // Le flux officiel ne contient pas l'enseigne. brands.json (identifiant de station -> groupe)
+  // est généré chaque semaine depuis OpenStreetMap par scripts/build_brands.py (GitHub Actions).
+  let brands = {};
+  const brandOf = (id) => brands[String(id)] || "";
+  fetch("brands.json")
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((b) => { brands = b && typeof b === "object" ? b : {}; if (state.stations.length) rerenderKeepingPopup(); })
+    .catch((e) => console.warn("Enseignes indisponibles :", e));
+
+  function rerenderKeepingPopup() {
+    const open = state.openId;
+    render();
+    const m = open != null && markersById.get(open);
+    if (m) m.openPopup();
   }
 
   // ---------- Rendu ----------
@@ -502,11 +543,13 @@
   function popupHtml(s) {
     const dest = `${s.lat},${s.lon}`;
     const priceBlock = s.prix != null
-      ? `<div class="big">${fmtPrice(s.prix)} €<span class="muted"> /L</span></div>
-         <div class="muted">Mis à jour ${ago(s.maj)}</div>`
-      : `<div class="big" style="color:var(--off)">SP95 indisponible</div>
+      ? s.fuels.map((f, i) => `<div class="big${i ? " alt" : ""}">${FUELS.length > 1 ? `<span class="fuel-tag">${esc(f.label)}</span> ` : ""}${fmtPrice(f.prix)} €<span class="muted"> /L</span></div>
+         <div class="muted">Mis à jour ${ago(f.maj)}</div>`).join("")
+      : `<div class="big" style="color:var(--off)">${esc(FUEL_LABEL)} indisponible</div>
          <div class="muted">Rupture ${esc(s.rupture)}${s.ruptureDebut ? " depuis le " + new Date(s.ruptureDebut).toLocaleDateString("fr-FR") : ""}</div>`;
+    const brand = brandOf(s.id);
     return `<div class="pop">
+      ${brand ? `<div class="pop-brand">${esc(brand)}</div>` : ""}
       <h3>${esc(s.adresse)}</h3>
       <div class="muted">${esc(s.cp)} ${esc(s.ville)} · à ${fmtKm(s.dist)}${s.h24 ? " · automate 24/24" : ""}</div>
       ${priceBlock}
@@ -529,19 +572,22 @@
     const min = Math.min(...prices), max = Math.max(...prices);
     const best = priced.length ? priced.reduce((a, b) => (b.prix < a.prix || (b.prix === a.prix && b.dist < a.dist) ? b : a)) : null;
 
+    const multi = FUELS.length > 1;
     list.forEach((s, i) => {
       const c = colorFor(s.prix, min, max);
       const label = s.prix != null ? fmtPrice(s.prix) : "—";
       const icon = L.divIcon({
         className: "pin-wrap",
-        html: `<div class="pin${best && s.id === best.id ? " best" : ""}" style="--c:${c}">${label}</div>`,
+        html: `<div class="pin${best && s.id === best.id ? " best" : ""}" style="--c:${c}">${label}${multi && s.fuel ? `<small>${esc(s.fuel)}</small>` : ""}</div>`,
         iconSize: [0, 0], iconAnchor: [0, 0], popupAnchor: [0, -30]
       });
+      const brand = brandOf(s.id);
       const m = L.marker([s.lat, s.lon], {
-        icon, title: `${s.adresse} – ${label} €`,
+        icon, title: `${brand ? brand + " – " : ""}${s.adresse} – ${label} €`,
         zIndexOffset: s.prix == null ? -500 : Math.round(1000 - (s.prix - min) * 1000)
       }).bindPopup(popupHtml(s), { maxWidth: 280 });
-      m.on("popupopen", () => highlight(s.id, false));
+      m.on("popupopen", () => { state.openId = s.id; highlight(s.id, false); });
+      m.on("popupclose", () => { if (state.openId === s.id) state.openId = null; });
       m.addTo(stationLayer);
       markersById.set(s.id, m);
 
@@ -550,9 +596,9 @@
       if (s.prix == null) li.classList.add("off");
       li.innerHTML = `
         <span class="rank">${s.prix != null ? i + 1 : ""}</span>
-        <span class="addr">${esc(s.adresse)}</span>
-        <span class="price" style="color:${s.prix != null ? c : "var(--off)"}">${s.prix != null ? fmtPrice(s.prix) + " €" : "Rupture"}<small>${s.prix != null ? ago(s.maj) : esc(s.rupture)}</small></span>
-        <span class="meta">${esc(s.ville)} · ${fmtKm(s.dist)}${s.h24 ? " · 24/24" : ""}</span>`;
+        <span class="addr">${brand ? `<span class="brand">${esc(brand)}</span> · ` : ""}${esc(s.adresse)}</span>
+        <span class="price" style="color:${s.prix != null ? c : "var(--off)"}">${s.prix != null ? fmtPrice(s.prix) + " €" : "Rupture"}<small>${s.prix != null ? (multi ? esc(s.fuel) + " · " : "") + ago(s.maj) : esc(s.rupture)}</small></span>
+        <span class="meta">${esc(s.ville)} · ${fmtKm(s.dist)}${s.h24 ? " · 24/24" : ""}${s.fuels.slice(1).map((f) => ` · ${esc(f.label)} ${fmtPrice(f.prix)} €`).join("")}</span>`;
       li.addEventListener("click", () => {
         if (isMobile.matches) setCollapsed(true); // sur téléphone, on libère la carte pour voir la station
         highlight(s.id, true);
@@ -564,10 +610,10 @@
     const rad = state.radius.toLocaleString("fr-FR");
     const stale = state.staleCount ? ` · ${state.staleCount} prix de plus de 7 jours masqué${state.staleCount > 1 ? "s" : ""}` : "";
     if (!priced.length) {
-      setStatus(`Aucune station avec du SP95 dans un rayon de <b>${rad} km</b>${stale}. Augmentez le rayon.`);
+      setStatus(`Aucune station avec ${FUEL_TEXT} dans un rayon de <b>${rad} km</b>${stale}. Augmentez le rayon.`);
     } else {
       const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
-      setStatus(`<b>${priced.length}</b> station${priced.length > 1 ? "s" : ""} avec du SP95 à moins de <b>${rad} km</b> · de <b>${fmtPrice(min)} €</b> à <b>${fmtPrice(max)} €</b> (moy. ${fmtPrice(avg)} €) · ${t}${stale}`);
+      setStatus(`<b>${priced.length}</b> station${priced.length > 1 ? "s" : ""} avec ${FUEL_TEXT} à moins de <b>${rad} km</b> · de <b>${fmtPrice(min)} €</b> à <b>${fmtPrice(max)} €</b> (moy. ${fmtPrice(avg)} €) · ${t}${stale}`);
       els.mini.textContent = `${priced.length} station${priced.length > 1 ? "s" : ""} · ${fmtPrice(min)} à ${fmtPrice(max)} € · ${rad} km`;
     }
   }
